@@ -1,17 +1,92 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: |
+Description:
   This cfn file is used for creating a template which runs S3 static 
   web-hosting using cloudfront distribution.
 Parameters:
+  myDomainName:
+    Description: Type your full domain name
+    Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?!-)
 
 Resources:
+  myS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref myDomainName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
   
+  myBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref myS3Bucket # Required
+      PolicyDocument: # Required
+        Version: 2012-10-17
+        Statement:
+        - Action:
+            - 's3:GetObject'
+          Effect: Allow
+          Resource: !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref myS3Bucket
+              - /*
+          Principal: '*'
+
+  myCloudfrontDist:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref myDomainName 
+        Comment: my cloudfront distribution
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # this value is taken from Policies/Cloudfront CachingOptimized
+          Compress: true
+          TargetOriginId: umut-cfn-kittens
+          ViewerProtocolPolicy: redirect-to-https
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+            - CustomOriginConfig:
+                OriginProtocolPolicy: http-only  
+              DomainName: !Select [ 2, !Split [ "/", !GetAtt myS3Bucket.WebsiteURL] ] 
+              Id: umut-cfn-kittens
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          AcmCertificateArn: arn:aws:acm:us-east-1:538605215720:certificate/bc2f764f-fb67-475b-844f-1bdb032486d1 # get this value from the Aws Certificate Manager
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+  
+  myRoute53Record:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: Z00103052AHDW8PNCQ929 # get this value from hosted zone details at the Route 53 
+      RecordSets: 
+        - AliasTarget:
+            DNSName: !GetAtt myCloudfrontDist.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2 # this is suggested value by aws
+          Name: !Ref myDomainName
+          Type: A
 
 Outputs:
 
   BucketName: 
+    Description: Endpoint for S3 Bucket
+    Value: !GetAtt myS3Bucket.WebsiteURL
     
   CloudfrontEndpoint:
+    Description: Endpoint for Cloudfront
+    Value: !GetAtt myCloudfrontDist.DomainName
     
   FullDomainName:
-    
+    Description: Full domain name of the application
+    Value: !Ref myDomainName
